@@ -1,0 +1,429 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  :root{
+    --bg:#0F1115;
+    --panel:#171A21;
+    --panel-2:#1D212A;
+    --border:#262B35;
+    --text:#E6E9EF;
+    --muted:#8A93A6;
+    --page:#5B9DFF;
+    --bookmark:#FFB454;
+    --action:#FF7A45;
+    --mono: 'IBM Plex Mono', 'SF Mono', Menlo, Consolas, monospace;
+    --sans: 'Inter', -apple-system, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:var(--sans); font-size:14px; min-height:100vh;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  .app{ display:flex; min-height:100vh; }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar{
+    width:280px; flex-shrink:0; background:var(--panel);
+    border-right:1px solid var(--border); padding:20px;
+    display:flex; flex-direction:column; gap:18px;
+  }
+  .brand{ font-family:var(--mono); font-size:13px; letter-spacing:.04em; color:var(--muted); text-transform:uppercase; }
+  .brand b{ color:var(--text); font-weight:600; }
+  .drop{
+    border:1.5px dashed var(--border); border-radius:8px; padding:18px 14px;
+    text-align:center; cursor:pointer; transition:border-color .15s, background .15s;
+  }
+  .drop:hover{ border-color:var(--action); background:rgba(255,122,69,.05); }
+  .drop svg{ opacity:.6; margin-bottom:6px; }
+  .drop-label{ font-weight:600; font-size:13px; }
+  .drop-sub{ color:var(--muted); font-size:12px; margin-top:4px; }
+  input[type=file]{ display:none; }
+
+  .summary{ display:flex; flex-direction:column; gap:8px; font-family:var(--mono); font-size:12px; }
+  .summary-row{ display:flex; justify-content:space-between; color:var(--muted); }
+  .summary-row b{ color:var(--text); font-weight:600; }
+  .root-path{
+    background:var(--panel-2); border:1px solid var(--border); border-radius:6px;
+    padding:8px 10px; font-family:var(--mono); font-size:11px; color:var(--muted);
+    word-break:break-all; line-height:1.5;
+  }
+
+  .filter{
+    background:var(--panel-2); border:1px solid var(--border); border-radius:6px;
+    padding:8px 10px; color:var(--text); font-family:var(--sans); font-size:13px; width:100%;
+  }
+  .filter:focus{ outline:1px solid var(--action); border-color:var(--action); }
+  .filter::placeholder{ color:var(--muted); }
+
+  .type-toggles{ display:flex; flex-direction:column; gap:6px; }
+  .toggle{
+    display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:6px;
+    cursor:pointer; font-size:13px; user-select:none;
+  }
+  .toggle:hover{ background:var(--panel-2); }
+  .dot{ width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .dot.page{ background:var(--page); } .dot.visual{ background:var(--visual); } .dot.bookmark{ background:var(--bookmark); }
+  .toggle .count{ margin-left:auto; color:var(--muted); font-family:var(--mono); font-size:11px; }
+
+  .sidebar-footer{ margin-top:auto; color:var(--muted); font-size:11px; line-height:1.5; }
+
+  /* ---------- Main ---------- */
+  .main{ flex:1; display:flex; flex-direction:column; min-width:0; }
+  .topbar{
+    position:sticky; top:0; z-index:5; background:rgba(15,17,21,.92); backdrop-filter:blur(6px);
+    border-bottom:1px solid var(--border); padding:14px 24px;
+    display:flex; align-items:center; gap:16px;
+  }
+  .topbar h1{ font-size:15px; margin:0; font-weight:600; }
+  .topbar .sel-count{ color:var(--muted); font-size:13px; font-family:var(--mono); }
+  .spacer{ flex:1; }
+  .btn{
+    border:1px solid var(--border); background:var(--panel-2); color:var(--text);
+    padding:8px 14px; border-radius:6px; font-size:13px; font-weight:500; cursor:pointer;
+    font-family:var(--sans); transition:border-color .15s, background .15s;
+  }
+  .btn:hover{ border-color:var(--muted); }
+  .btn.primary{ background:var(--action); border-color:var(--action); color:#1a0e08; font-weight:600; }
+  .btn.primary:hover{ background:#ff8c5e; }
+  .btn:disabled{ opacity:.4; cursor:not-allowed; }
+  .btn.ghost{ background:transparent; }
+
+  .content{ padding:24px; overflow-y:auto; }
+  .empty{
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    min-height:60vh; color:var(--muted); text-align:center; gap:10px;
+  }
+  .empty h2{ color:var(--text); font-weight:600; font-size:16px; margin:0; }
+  .empty p{ max-width:380px; margin:0; font-size:13px; line-height:1.6; }
+
+  .section{ margin-bottom:28px; }
+  .section-head{
+    display:flex; align-items:center; gap:10px; margin-bottom:10px;
+    padding-bottom:8px; border-bottom:1px solid var(--border);
+  }
+  .section-head h3{ font-size:12px; text-transform:uppercase; letter-spacing:.06em; margin:0; color:var(--muted); font-weight:600; }
+  .section-head .link{ margin-left:auto; color:var(--muted); font-size:12px; cursor:pointer; }
+  .section-head .link:hover{ color:var(--text); }
+
+  .page-group{ margin-bottom:4px; border:1px solid var(--border); border-radius:8px; overflow:hidden; background:var(--panel); }
+  .row{
+    display:flex; align-items:center; gap:10px; padding:9px 12px; cursor:pointer;
+    border-bottom:1px solid transparent; transition:background .1s;
+  }
+  .row:hover{ background:var(--panel-2); }
+  .row.page-row{ background:var(--panel-2); font-weight:600; }
+  .row input[type=checkbox]{ accent-color:var(--action); width:14px; height:14px; flex-shrink:0; }
+  .row .label{ font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row .badge{
+    font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:.05em;
+    padding:2px 6px; border-radius:3px; flex-shrink:0;
+  }
+  .badge.page{ background:rgba(91,157,255,.15); color:var(--page); }
+  .badge.bookmark{ background:rgba(255,180,84,.15); color:var(--bookmark); }
+  .row .meta{ margin-left:auto; color:var(--muted); font-size:11px; font-family:var(--mono); flex-shrink:0; }
+
+  .path-preview{
+    font-family:var(--mono); font-size:10.5px; color:var(--muted); padding:0 12px 8px 34px;
+    word-break:break-all; display:none;
+  }
+  .row.expanded + .path-preview{ display:block; }
+
+  .toast{
+    position:fixed; bottom:20px; left:50%; transform:translateX(-50%);
+    background:var(--panel-2); border:1px solid var(--action); color:var(--text);
+    padding:10px 18px; border-radius:8px; font-size:13px; opacity:0; pointer-events:none;
+    transition:opacity .2s, transform .2s; font-family:var(--sans);
+  }
+  .toast.show{ opacity:1; transform:translateX(-50%) translateY(-6px); }
+
+  ::-webkit-scrollbar{ width:10px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border); border-radius:5px; }
+</style>
+
+<div class="app">
+  <div class="sidebar">
+    <div class="brand"><b>PBIP</b> File Finder</div>
+
+    <label class="drop" id="dropZone">
+      <input type="file" id="folderInput" webkitdirectory directory multiple />
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8A93A6" stroke-width="1.6"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z"/></svg>
+      <div class="drop-label">Select project folder</div>
+      <div class="drop-sub">The folder containing your .pbip file</div>
+    </label>
+
+    <div class="summary" id="summary" style="display:none;">
+      <div class="root-path" id="rootPath"></div>
+      <div class="summary-row"><span>Pages</span><b id="cPages">0</b></div>
+      <div class="summary-row"><span>Bookmarks</span><b id="cBookmarks">0</b></div>
+    </div>
+
+    <input class="filter" id="filterInput" placeholder="Filter by name…" style="display:none;" />
+
+    <div class="sidebar-footer">
+      Everything runs locally in your browser. Nothing is uploaded anywhere — files are read and zipped client-side. <br>
+      © <a href="https://www.linkedin.com/in/sonam-wangchuk-557097257/" target="_blank" rel="noopener noreferrer">Sonam Wangchuk</a>, 2026
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="topbar">
+      <h1>Select what to extract</h1>
+      <span class="sel-count" id="selCount"></span>
+      <div class="spacer"></div>
+      <button class="btn ghost" id="copyBtn" disabled>Copy paths</button>
+      <button class="btn primary" id="exportBtn" disabled>Export ZIP</button>
+    </div>
+    <div class="content" id="content">
+      <div class="empty">
+        <h2>No project loaded</h2>
+        <p>Select the top-level folder that contains your <code>.pbip</code> file (the one holding the <code>.Report</code> and <code>.SemanticModel</code> subfolders). It'll be scanned for page and bookmark names — nothing leaves your machine.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let filesByPath = {};   // relative path -> File
+let items = { pages: [], bookmarks: [] }; // parsed model
+let selected = new Set(); // set of "kind:id" strings
+let reportRoot = null;
+
+const el = id => document.getElementById(id);
+const folderInput = el('folderInput');
+const dropZone = el('dropZone');
+
+dropZone.addEventListener('click', () => {}); // native label behavior handles open
+folderInput.addEventListener('change', async (e) => {
+  filesByPath = {};
+  for (const f of e.target.files) filesByPath[f.webkitRelativePath] = f;
+  await parseProject();
+});
+
+async function readJSON(path){
+  const f = filesByPath[path];
+  if (!f) return null;
+  try { return JSON.parse(await f.text()); } catch(e){ return null; }
+}
+
+function findTitleText(obj, depth=0){
+  if (!obj || depth > 6) return null;
+  if (Array.isArray(obj)){
+    for (const item of obj){
+      const r = findTitleText(item, depth+1);
+      if (r) return r;
+    }
+    return null;
+  }
+  if (typeof obj === 'object'){
+    for (const [k,v] of Object.entries(obj)){
+      if (k === 'text' && typeof v === 'string' && v.trim()) return v;
+      if (k === 'expr' && v && v.Literal && typeof v.Literal.Value === 'string'){
+        const m = v.Literal.Value.match(/^'(.*)'$/);
+        if (m) return m[1];
+      }
+    }
+    for (const v of Object.values(obj)){
+      const r = findTitleText(v, depth+1);
+      if (r) return r;
+    }
+  }
+  return null;
+}
+
+async function parseProject(){
+  items = { pages: [], bookmarks: [] };
+  selected.clear();
+
+  const pagesJsonPath = Object.keys(filesByPath).find(p => p.endsWith('/definition/pages/pages.json'));
+  if (!pagesJsonPath){
+    el('content').innerHTML = `<div class="empty"><h2>No report definition found</h2><p>Couldn't find a <code>definition/pages/pages.json</code> file. Make sure you selected the folder that contains the <code>.Report</code> subfolder (PBIP / TMDL format).</p></div>`;
+    el('summary').style.display = 'none';
+    el('filterInput').style.display = 'none';
+    updateActionButtons();
+    return;
+  }
+
+  reportRoot = pagesJsonPath.replace('/definition/pages/pages.json', '');
+  const pagesMeta = await readJSON(pagesJsonPath);
+  const pageOrder = (pagesMeta && pagesMeta.pageOrder) || [];
+
+  for (const pageName of pageOrder){
+    const pagePath = `${reportRoot}/definition/pages/${pageName}`;
+    const pageJson = await readJSON(`${pagePath}/page.json`);
+    const displayName = (pageJson && (pageJson.displayName || pageJson.name)) || pageName;
+
+    items.pages.push({
+      id: pagePath,
+      name: pageName,
+      label: displayName,
+      path: pagePath
+    });
+  }
+
+  // Bookmarks
+  const bookmarkFiles = Object.keys(filesByPath).filter(p =>
+    p.includes(`${reportRoot}/definition/bookmarks/`) && p.endsWith('.json') && !p.endsWith('/bookmarks.json')
+  );
+  for (const bPath of bookmarkFiles){
+    const bJson = await readJSON(bPath);
+    const displayName = (bJson && (bJson.displayName || bJson.name)) || bPath.split('/').pop().replace('.json','');
+    items.bookmarks.push({ id: bPath, label: displayName, path: bPath });
+  }
+  items.bookmarks.sort((a,b) => a.label.localeCompare(b.label));
+
+  render();
+}
+
+function toggleSelect(id){
+  if (selected.has(id)) selected.delete(id); else selected.add(id);
+  render(el('filterInput').value);
+}
+
+function render(filterText=''){
+  const f = filterText.trim().toLowerCase();
+  el('summary').style.display = 'flex';
+  el('filterInput').style.display = 'block';
+  el('rootPath').textContent = reportRoot;
+  el('cPages').textContent = items.pages.length;
+  el('cBookmarks').textContent = items.bookmarks.length;
+
+  const matches = (label) => !f || label.toLowerCase().includes(f);
+
+  let html = '';
+
+  // Pages section
+  const visiblePages = items.pages.filter(p => matches(p.label));
+  html += `<div class="section"><div class="section-head"><h3>Pages</h3></div>`;
+
+  if (visiblePages.length === 0){
+    html += `<div style="color:var(--muted); font-size:13px; padding:8px 0;">No matches.</div>`;
+  } else {
+    html += `<div class="page-group">`;
+
+    for (const p of visiblePages){
+      const pChecked = selected.has(p.id) ? 'checked' : '';
+      html += `<div class="row page-row" data-toggle="${p.id}">
+        <input type="checkbox" ${pChecked} data-toggle="${p.id}" />
+        <span class="badge page">page</span>
+        <span class="label">${escapeHtml(p.label)}</span>
+      </div>
+      <div class="path-preview">${escapeHtml(p.path)}</div>`;
+    }
+
+    html += `</div>`;
+  }
+
+  html += `</div>`;
+
+  // Bookmarks section
+  const visibleBookmarks = items.bookmarks.filter(b => matches(b.label));
+  html += `<div class="section"><div class="section-head"><h3>Bookmarks</h3></div>`;
+  if (items.bookmarks.length === 0){
+    html += `<div style="color:var(--muted); font-size:13px; padding:8px 0;">No bookmarks found in this project.</div>`;
+  } else if (visibleBookmarks.length === 0){
+    html += `<div style="color:var(--muted); font-size:13px; padding:8px 0;">No matches.</div>`;
+  } else {
+    html += `<div class="page-group">`;
+    for (const b of visibleBookmarks){
+      const bChecked = selected.has(b.id) ? 'checked' : '';
+      html += `<div class="row" data-toggle="${b.id}">
+        <input type="checkbox" ${bChecked} data-toggle="${b.id}" />
+        <span class="badge bookmark">bookmark</span>
+        <span class="label">${escapeHtml(b.label)}</span>
+      </div>
+      <div class="path-preview">${escapeHtml(b.path)}</div>`;
+    }
+    html += `</div>`;
+  }
+  html += `</div>`;
+
+  el('content').innerHTML = html;
+
+  document.querySelectorAll('[data-toggle]').forEach(node => {
+    node.addEventListener('click', (e) => {
+      if (e.target.tagName === 'INPUT') return; // checkbox handles its own click below
+      toggleSelect(node.getAttribute('data-toggle'));
+    });
+  });
+  document.querySelectorAll('input[type=checkbox][data-toggle]').forEach(cb => {
+    cb.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleSelect(cb.getAttribute('data-toggle'));
+    });
+  });
+
+  updateActionButtons();
+}
+
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+
+function updateActionButtons(){
+  const n = selected.size;
+  el('selCount').textContent = n ? `${n} selected` : '';
+  el('exportBtn').disabled = n === 0;
+  el('copyBtn').disabled = n === 0;
+}
+
+function collectSelectedPaths(){
+  const paths = new Set();
+  const labelled = [];
+  for (const id of selected){
+    // id is always a folder or file path already; include everything under it
+    const isFile = filesByPath[id] !== undefined;
+    if (isFile){
+      paths.add(id);
+    } else {
+      const prefix = id + '/';
+      Object.keys(filesByPath).forEach(p => { if (p === id || p.startsWith(prefix)) paths.add(p); });
+    }
+    labelled.push(id);
+  }
+  return { paths: Array.from(paths), labelled };
+}
+
+el('copyBtn').addEventListener('click', async () => {
+  const { paths } = collectSelectedPaths();
+  await navigator.clipboard.writeText(paths.join('\n'));
+  showToast(`Copied ${paths.length} file path${paths.length===1?'':'s'}`);
+});
+
+el('exportBtn').addEventListener('click', async () => {
+  const { paths } = collectSelectedPaths();
+  if (paths.length === 0) return;
+  el('exportBtn').disabled = true;
+  el('exportBtn').textContent = 'Zipping…';
+  const zip = new JSZip();
+  for (const p of paths){
+    const file = filesByPath[p];
+    zip.file(p, await file.arrayBuffer());
+  }
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'pbip-selection.zip';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  el('exportBtn').disabled = false;
+  el('exportBtn').textContent = 'Export ZIP';
+  showToast(`Exported ${paths.length} file${paths.length===1?'':'s'}`);
+});
+
+let toastTimer;
+function showToast(msg){
+  const t = el('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+el('filterInput').addEventListener('input', (e) => render(e.target.value));
+</script>
