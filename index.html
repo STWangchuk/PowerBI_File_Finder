@@ -1,3 +1,4 @@
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root{
@@ -225,6 +226,7 @@
       <div class="spacer"></div>
       <button class="btn ghost" id="copyBtnExtract" disabled>Copy paths</button>
       <button class="btn primary" id="exportBtnExtract" disabled>Export ZIP</button>
+      <button class="btn ghost" id="selectMissingBtn" style="display:none;">Select all new</button>
       <button class="btn primary" id="mergeBtn" style="display:none;" disabled>Merge &amp; download</button>
     </div>
 
@@ -454,6 +456,7 @@ function setMode(next){
   el('selCountTransplant').style.display = mode === 'transplant' ? 'inline' : 'none';
   el('copyBtnExtract').style.display = mode === 'extract' ? 'inline-block' : 'none';
   el('exportBtnExtract').style.display = mode === 'extract' ? 'inline-block' : 'none';
+  el('selectMissingBtn').style.display = mode === 'transplant' ? 'inline-block' : 'none';
   el('mergeBtn').style.display = mode === 'transplant' ? 'inline-block' : 'none';
 
   el('topTitle').textContent = mode === 'extract'
@@ -669,6 +672,7 @@ el('inputDonor').addEventListener('change', async (e) => {
   transplantSelected.clear();
   renderDonorSummary();
   renderTransplant();
+  updateTransplantButtons();
 });
 
 el('inputRecipient').addEventListener('change', async (e) => {
@@ -676,6 +680,7 @@ el('inputRecipient').addEventListener('change', async (e) => {
   recipient.project = await parseProject(recipient.files);
   renderRecipientSummary();
   renderTransplant();
+  updateTransplantButtons();
 });
 
 function renderDonorSummary(){
@@ -829,9 +834,52 @@ function updateTransplantButtons(){
   const n = transplantSelected.size;
   el('selCountTransplant').textContent = n ? `${n} selected` : '';
   el('mergeBtn').disabled = !(n > 0 && donor.project && recipient.project);
+  // Enable selectMissing only if both projects are loaded
+  el('selectMissingBtn').disabled = !(donor.project && recipient.project);
 }
 
 el('filterTransplant').addEventListener('input', (e) => renderTransplant(e.target.value));
+
+/* -----------------------------------------------------------
+   NEW: Select missing items (donor items not in recipient)
+   ----------------------------------------------------------- */
+el('selectMissingBtn').addEventListener('click', () => {
+  if (!donor.project || !recipient.project) return;
+
+  // Build sets of existing recipient IDs
+  const recipientPageIds = new Set(recipient.project.pages.map(p => p.id));
+  const recipientBookmarkIds = new Set(recipient.project.bookmarks.map(b => b.id));
+  const recipientMeasureKeys = new Set(recipient.project.measures.map(m => `${m.table}::${m.name}`));
+
+  // Clear current selection and re‑select only missing items
+  transplantSelected.clear();
+
+  // Pages: select if donor id not in recipient
+  for (const p of donor.project.pages) {
+    if (!recipientPageIds.has(p.id)) {
+      transplantSelected.add(p.path);
+    }
+  }
+
+  // Bookmarks: select if donor id not in recipient
+  for (const b of donor.project.bookmarks) {
+    if (!recipientBookmarkIds.has(b.id)) {
+      transplantSelected.add(b.path);
+    }
+  }
+
+  // Measures: select if table+name not in recipient
+  for (const m of donor.project.measures) {
+    const key = `${m.table}::${m.name}`;
+    if (!recipientMeasureKeys.has(key)) {
+      transplantSelected.add(m.id);
+    }
+  }
+
+  // Re‑render with current filter
+  renderTransplant(el('filterTransplant').value);
+  showToast(`Selected ${transplantSelected.size} missing items from donor`);
+});
 
 /**
  * Builds the merged recipient project (recipient files + selected donor
